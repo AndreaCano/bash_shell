@@ -1,0 +1,122 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <errno.h>
+#include <unistd.h>
+
+/*
+ * A simple shell
+ */
+
+#define MAX_BUF 160
+#define MAX_TOKS 100
+
+int main(int argc, char* argv[]) {
+  char *pos;
+  char *tok;
+  char s[MAX_BUF];
+  char *toks[MAX_TOKS];
+  char *status;
+  time_t rawtime;
+  struct tm *timeinfo;
+  static const char prompt[] = "msh> ";
+  
+  /*Filename from command line*/
+  FILE* file_ptr;
+  
+  if (argc > 1) {
+    file_ptr = fopen(argv[1], "r");
+  }
+
+  while (1) {
+    
+    /* read input from file or stdin*/
+    if (argc == 1) {
+      /* prompt for input */
+      printf(prompt);  
+      status = fgets(s, MAX_BUF-1, stdin);
+    } else {
+      status = fgets(s, MAX_BUF-1,file_ptr);
+    }
+
+    /* exit if ^d or "exit" entered */
+    if (status == NULL || strcmp(s, "exit\n") == 0) {
+      if (status == NULL) {
+        printf("");
+      }
+      exit(EXIT_SUCCESS);
+    }
+
+    /* remove any trailing newline */
+    if ((pos = strchr(s, '\n')) != NULL) {
+      *pos = '\0';
+    }
+
+    /* break input line into tokens */
+    char *rest = s;
+    int i = 0;
+    while ((tok = strtok_r(rest, " ", &rest)) != NULL && i < MAX_TOKS) {
+      toks[i] = tok;
+      i++;
+    }
+    if (i == MAX_TOKS) {
+      fprintf(stderr, "main: too many tokens");
+      exit(EXIT_FAILURE);
+    }
+    toks[i] = NULL;
+
+    /* do nothing if no tokens found in input */
+    if (i == 0) {
+      continue;
+    }
+
+    /* if a shell built-in command, then run it */
+    if (strcmp(toks[0], "help") == 0) {
+      printf("enter a Linux command, or 'exit' to quit\n");
+      continue;
+    } 
+    if (strcmp(toks[0], "today") == 0) {
+      time(&rawtime);
+      timeinfo = localtime(&rawtime);
+      printf("%02d/%02d/%4d\n", 1 + timeinfo->tm_mon, timeinfo->tm_mday, 1900 + timeinfo->tm_year);
+      continue;
+    }
+
+    /*Adding the cd command*/
+    if (strcmp(toks[0],"cd") == 0) {
+      int path;
+      /*Changing to Home Directory*/ 
+      if (!toks[1]) {
+         path = chdir(getenv("HOME"));
+         continue;
+      }
+      /*cd with specified directory*/
+      path = chdir(toks[1]);
+      if (path == 0) {
+        continue;
+      } else {
+        /*Non-exisiting directory*/
+        printf("msh: %s: %s\n", toks[0], "bad path");
+        continue;
+      }
+    }
+
+    /* otherwise fork a process to run the command */
+    int rc = fork();
+    if (rc < 0) {
+      fprintf(stderr, "fork failed\n");
+      exit(1);
+    }
+    if (rc == 0) {
+      /* child process: run the command indicated by toks[0] */
+      execvp(toks[0], toks);  
+      /* if execvp returns than an error occurred */
+      printf("msh: %s: %s\n", toks[0], strerror(errno));
+      exit(1);
+    } else {
+      // wait for command to finish running
+      wait(NULL);
+    }
+  }
+}
